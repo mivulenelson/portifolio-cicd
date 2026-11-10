@@ -89,9 +89,9 @@ data "aws_iam_policy_document" "github_trust" {
     }
 
     condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.https://github.com/mivulenelson/portifolio-cicd}:*"]
     }
 
     # Only THIS repository, and only the main branch or the "production" environment, may assume the role.
