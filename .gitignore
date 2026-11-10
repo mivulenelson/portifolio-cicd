@@ -1,0 +1,14 @@
+.env
+node_modules
+dist
+data
+__pycache__
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+tfplan
+crash.log

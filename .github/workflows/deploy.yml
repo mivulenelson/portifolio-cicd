@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main] # the approved branch: only reviewed code reaches main
+  workflow_dispatch:
+
+permissions:
+  id-token: write # lets the job request a short-lived AWS login (OIDC), no stored keys
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Build, push and deploy to AWS
+    needs: ci
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.url.outputs.app_url }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_project_name: ${{ vars.PROJECT_NAME || 'portfolio-cicd' }}
+      TF_VAR_admin_password: ${{ secrets.ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set the build ID (short commit SHA)
+        run: |
+          TAG="${GITHUB_SHA::7}"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "TF_VAR_image_tag=$TAG" >> "$GITHUB_ENV"
+
+      - name: Log in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: infra
+        run: >
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Create the ECR repositories first
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve -target=aws_ecr_repository.app
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the Docker images
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          NAME: ${{ vars.PROJECT_NAME || 'portfolio-cicd' }}
+        run: |
+          docker build -t "$REGISTRY/$NAME-backend:$IMAGE_TAG" ./backend
+          docker build --build-arg APP_VERSION="$IMAGE_TAG" -t "$REGISTRY/$NAME-frontend:$IMAGE_TAG" ./frontend
+          docker push "$REGISTRY/$NAME-backend:$IMAGE_TAG"
+          docker push "$REGISTRY/$NAME-frontend:$IMAGE_TAG"
+
+      - name: Terraform plan
+        working-directory: infra
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Terraform apply
+        working-directory: infra
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Read the application URL
+        id: url
+        working-directory: infra
+        run: echo "app_url=$(terraform output -raw app_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test (is the new build live?)
+        env:
+          URL: ${{ steps.url.outputs.app_url }}
+        run: |
+          for i in $(seq 1 30); do
+            body=$(curl -fsS --max-time 10 "$URL/api/health" || true)
+            echo "Attempt $i: $body"
+            if echo "$body" | grep -q "\"version\":\"$IMAGE_TAG\""; then
+              echo "Build $IMAGE_TAG is live at $URL"
+              {
+                echo "### Deployed to AWS"
+                echo "- URL: $URL"
+                echo "- Build ID: $IMAGE_TAG"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "The new build did not appear within 5 minutes"
+          exit 1

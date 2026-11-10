@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars for local runs (this file is git-ignored). Never commit real secrets.
+aws_region   = "us-east-1"
+project_name = "portfolio-cicd"
+image_tag    = "latest"
+
+# Prefer an environment variable for the secret instead of writing it in a file:
+#   export TF_VAR_admin_password='a-long-passphrase'
