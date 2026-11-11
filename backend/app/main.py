@@ -20,7 +20,7 @@ def seed(db: Session) -> None:
                 id=1,
                 name="Kalanzi Joseph",
                 headline="Final-year Computer Science student",
-                availability="Open to graduate roles and internships",
+                availability="Open to graduate roles and internships (deployed by CI/CD)",
                 bio=(
                     "I build practical software, from APIs to clean user interfaces. "
                     "I am finishing my Computer Science degree and looking for a team "
