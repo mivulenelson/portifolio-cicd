@@ -89,19 +89,16 @@ data "aws_iam_policy_document" "github_trust" {
     }
 
     condition {
-      test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.https://github.com/mivulenelson/portifolio-cicd}:*"]
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
     }
 
-    # Only THIS repository, and only the main branch or the "production" environment, may assume the role.
+    # Any workflow in THIS repository (and only this one) may assume the role.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:environment:production",
-      ]
+      values   = ["repo:${var.github_repo}:*"]
     }
   }
 }
