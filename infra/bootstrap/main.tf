@@ -76,6 +76,18 @@ data "aws_iam_openid_connect_provider" "existing" {
 }
 
 locals {
+  github_owner = split("/", var.github_repo)[0]
+  github_name  = split("/", var.github_repo)[1]
+
+  # GitHub sends one of two subject formats, depending on when the repository was created:
+  #   old format:                  repo:OWNER/REPO:...
+  #   immutable format (new repos): repo:OWNER@OWNER_ID/REPO@REPO_ID:...
+  # Accept both, but only for this exact repository.
+  github_sub_patterns = [
+    "repo:${var.github_repo}:*",
+    "repo:${local.github_owner}@${var.github_owner_id}/${local.github_name}@${var.github_repo_id}:*",
+  ]
+
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.existing[0].arn
 }
 
@@ -98,7 +110,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:*"]
+      values   = local.github_sub_patterns
     }
   }
 }
